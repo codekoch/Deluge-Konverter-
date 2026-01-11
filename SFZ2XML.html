@@ -186,7 +186,7 @@
 
 <div class="container">
     <h1>SFZ/DWP to Deluge XML Batch Converter</h1>
-    <p>Process multiple .sfz or .dwp files simultaneously. Output files are automatically named: <code>[Pack Name] - [Category] - [Preset Name].xml</code>. "From Mars" is removed from the filename (but kept in path).</p>
+    <p>Process multiple .sfz or .dwp files simultaneously. Output files are automatically named: <code>[Pack Name] - [Category] - [Preset Name].xml</code>. "From Mars" is removed from the filename (but kept in path). Duplicates for the same note (e.g. L/R channels) are ignored.</p>
 
     <div class="step">
         <h3>1. Folder Settings</h3>
@@ -601,15 +601,21 @@
         uniqueFiles = uniqueFiles.filter(f => !/_\d+\.wav$/i.test(f));
 
         let samples = [];
+        let processedNotes = new Set(); // Keep track of notes we have already found a sample for
+
         uniqueFiles.forEach(filename => {
             const midi = parseMidiFromFilename(filename);
             if (midi !== null) {
-                samples.push({
-                    filename: filename,
-                    rangeTop: midi,
-                    rootNote: midi,
-                    endPos: 50000
-                });
+                // Only add if we haven't seen this note (midi/rangeTop) yet
+                if (!processedNotes.has(midi)) {
+                    processedNotes.add(midi);
+                    samples.push({
+                        filename: filename,
+                        rangeTop: midi,
+                        rootNote: midi,
+                        endPos: 50000
+                    });
+                }
             }
         });
         samples.sort((a, b) => a.rangeTop - b.rangeTop);
@@ -619,6 +625,8 @@
     function parseSFZ(content) {
         const lines = content.split(/\r?\n/);
         const samples = [];
+        const processedNotes = new Set(); // Keep track of notes
+
         lines.forEach(line => {
             line = line.trim();
             if (line.startsWith('<region>') && line.includes('sample=')) {
@@ -635,13 +643,18 @@
 
                     let rangeTop = hikeyMatch ? parseInt(hikeyMatch[1]) : parseMidiFromFilename(filename);
                     let rootNote = pitchMatch ? parseInt(pitchMatch[1]) : parseMidiFromFilename(filename);
+                    
                     if (rangeTop !== null && rootNote !== null) {
-                        samples.push({
-                            filename: filename,
-                            rangeTop: rangeTop,
-                            rootNote: rootNote,
-                            endPos: endMatch ? parseInt(endMatch[1]) : null
-                        });
+                        // Only add if we haven't seen this rangeTop yet
+                        if (!processedNotes.has(rangeTop)) {
+                            processedNotes.add(rangeTop);
+                            samples.push({
+                                filename: filename,
+                                rangeTop: rangeTop,
+                                rootNote: rootNote,
+                                endPos: endMatch ? parseInt(endMatch[1]) : null
+                            });
+                        }
                     }
                 }
             }
