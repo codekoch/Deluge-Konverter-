@@ -56,10 +56,16 @@
             border-radius: 6px;
             font-size: 16px;
             transition: border-color 0.3s;
+            margin-bottom: 10px;
         }
         input[type="text"]:focus {
             border-color: var(--accent);
             outline: none;
+        }
+        
+        small {
+            color: #7f8c8d;
+            font-weight: normal;
         }
 
         /* Drag and Drop Styles */
@@ -179,19 +185,24 @@
 <body>
 
 <div class="container">
-    <h1>SFZ to Deluge XML Batch Converter</h1>
-    <p>Process multiple .sfz files simultaneously. Output files are automatically named: <code>[Pack Name] - [Category] - [Preset Name].xml</code>. "From Mars" is removed from the name.</p>
+    <h1>SFZ/DWP to Deluge XML Batch Converter</h1>
+    <p>Process multiple .sfz or .dwp files simultaneously. Output files are automatically named: <code>[Pack Name] - [Category] - [Preset Name].xml</code>. "From Mars" is removed from the name automatically.</p>
 
     <div class="step">
-        <h3>1. Category (e.g. folder name on SD)</h3>
+        <h3>1. Folder Settings</h3>
+        
         <label for="categoryInput">Subfolder name (e.g. Bass, Lead):</label>
         <input type="text" id="categoryInput" value="Bass" placeholder="e.g. Bass">
+        
+        <label for="packNameInput">Pack Name Override <small>(Optional)</small>:</label>
+        <input type="text" id="packNameInput" placeholder="e.g. OB (leave empty to auto-detect from filename)">
+        <small>If set, this will replace the auto-detected pack name in both the filename and the sample path.</small>
     </div>
 
     <div class="step">
         <h3>2. Select Files</h3>
         <div class="drop-zone" id="dropZone">
-            <p>Drop <strong>.sfz</strong> files here (multiple selection possible)</p>
+            <p>Drop <strong>.sfz</strong> or <strong>.dwp</strong> files here (multiple selection possible)</p>
             <input type="file" id="fileInput" accept=".dwp,.sfz" multiple>
         </div>
         
@@ -369,6 +380,7 @@
     const dropZone = document.getElementById('dropZone');
     const fileInput = document.getElementById('fileInput');
     const categoryInput = document.getElementById('categoryInput');
+    const packNameInput = document.getElementById('packNameInput'); // New input
     const processBtn = document.getElementById('processBtn');
     const fileCountLabel = document.getElementById('fileCount');
     const fileListPreview = document.getElementById('fileListPreview');
@@ -435,10 +447,11 @@
         zipBtn.style.display = 'none';
 
         const category = categoryInput.value.trim() || "Bass";
+        const packNameOverride = packNameInput.value.trim(); // Get override value
 
         // Process files sequentially (or parallel)
         for (let file of selectedFiles) {
-            await processSingleFile(file, category, tbody);
+            await processSingleFile(file, category, packNameOverride, tbody);
         }
 
         document.getElementById('loading').style.display = 'none';
@@ -449,7 +462,7 @@
         }
     }
 
-    function processSingleFile(file, category, tbody) {
+    function processSingleFile(file, category, packNameOverride, tbody) {
         return new Promise((resolve) => {
             const reader = new FileReader();
             reader.readAsText(file, "ISO-8859-1");
@@ -484,15 +497,28 @@
                 let packName = "Unknown";
                 let presetName = filenameNoExt;
 
-                if (nameParts.length > 1) {
-                    packName = nameParts.pop().trim(); // Take last part as Pack
-                    presetName = nameParts.join(' - ').trim(); // Rest is Preset
+                // Try automatic detection if override is not provided
+                if (packNameOverride) {
+                    packName = packNameOverride;
+                    // If we override packname, we need to decide what the presetname is.
+                    // Usually it's everything before the packname in the original filename.
+                    // But if packname detection failed or we just overwrite it, 
+                    // we might just take the whole filename or try to split it if possible.
+                    // Here: We still try to split to get a clean preset name if possible.
+                    if (nameParts.length > 1) {
+                         presetName = nameParts.slice(0, nameParts.length - 1).join(' - ').trim();
+                    }
                 } else {
-                    packName = "UnknownPack"; 
+                    // Auto-detection logic
+                    if (nameParts.length > 1) {
+                        packName = nameParts.pop().trim(); // Take last part as Pack
+                        presetName = nameParts.join(' - ').trim(); // Rest is Preset
+                    } else {
+                        packName = "UnknownPack"; 
+                    }
                 }
 
-                // --- CLEANUP: Remove "From Mars" ---
-                // Regex removes " From Mars" (case insensitive)
+                // --- CLEANUP: Remove "From Mars" (Global, applies to manual override too now) ---
                 packName = packName.replace(/ From Mars/gi, "").trim();
 
                 // Construct new Output Filename
@@ -500,12 +526,8 @@
                 const outputFilename = `${packName} - ${category} - ${presetName}.xml`;
 
                 // Construct Path inside Deluge
-                // Use original pack name for path to ensure files are found if folders aren't renamed
-                let originalPackName = "Unknown";
-                const tempParts = filenameNoExt.split(' - ');
-                if (tempParts.length > 1) originalPackName = tempParts.pop().trim();
-                
-                const delugePath = `SAMPLES/Multisamples/${originalPackName}/${category}/${presetName}/`;
+                // Use packName (either overridden or auto-detected)
+                const delugePath = `SAMPLES/Multisamples/${packName}/${category}/${presetName}/`;
 
                 // 3. Generate XML if no error
                 let xmlContent = "";
