@@ -1,0 +1,678 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SFZ to Deluge XML Converter (Batch)</title>
+    <!-- JSZip for ZIP downloads -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <style>
+        :root {
+            --primary: #2c3e50;
+            --accent: #3498db;
+            --accent-hover: #2980b9;
+            --success: #27ae60;
+            --error: #e74c3c;
+            --bg: #f4f7f6;
+            --panel: #ffffff;
+            --drop-bg: #e8f4fc;
+            --drop-border: #3498db;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg);
+            color: var(--primary);
+            padding: 20px;
+            line-height: 1.6;
+        }
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            background: var(--panel);
+            padding: 40px;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.05);
+        }
+        h1 { margin-top: 0; color: var(--primary); }
+        h3 { margin-bottom: 10px; color: var(--accent); }
+        
+        .step {
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid #eee;
+        }
+        .step:last-child { border-bottom: none; }
+
+        label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+        
+        input[type="text"] {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 6px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+        input[type="text"]:focus {
+            border-color: var(--accent);
+            outline: none;
+        }
+
+        /* Drag and Drop Styles */
+        .drop-zone {
+            border: 2px dashed #ccc;
+            border-radius: 8px;
+            padding: 40px 20px;
+            text-align: center;
+            background: #fafafa;
+            transition: all 0.3s ease;
+            cursor: pointer;
+            position: relative;
+        }
+        .drop-zone.dragover {
+            background-color: var(--drop-bg);
+            border-color: var(--drop-border);
+            transform: scale(1.01);
+        }
+        .drop-zone p {
+            margin: 0;
+            font-size: 1.1em;
+            color: #7f8c8d;
+            pointer-events: none;
+        }
+        .drop-zone input[type="file"] {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            opacity: 0;
+            cursor: pointer;
+        }
+        
+        /* File List Preview */
+        #fileListPreview {
+            margin-top: 15px;
+            max-height: 150px;
+            overflow-y: auto;
+            background: #fff;
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+            padding: 0;
+            list-style: none;
+            display: none; /* Hidden by default */
+        }
+        #fileListPreview li {
+            padding: 8px 12px;
+            border-bottom: 1px solid #f0f0f0;
+            font-size: 14px;
+            color: #555;
+            display: flex;
+            align-items: center;
+        }
+        #fileListPreview li:last-child {
+            border-bottom: none;
+        }
+        #fileListPreview li::before {
+            content: "📄";
+            margin-right: 10px;
+        }
+        
+        button {
+            background-color: var(--accent);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            font-size: 16px;
+            font-weight: bold;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: transform 0.1s, background-color 0.2s;
+        }
+        button:hover { background-color: var(--accent-hover); }
+        button:active { transform: scale(0.98); }
+        button:disabled { background-color: #bdc3c7; cursor: not-allowed; transform: none; }
+
+        .btn-zip { background-color: var(--success); }
+        .btn-zip:hover { background-color: #219150; }
+
+        /* Results Table */
+        .results-container {
+            margin-top: 20px;
+            max-height: 500px;
+            overflow-y: auto;
+            border: 1px solid #eee;
+            border-radius: 6px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px;
+        }
+        th, td {
+            padding: 12px 15px;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+        }
+        th { background-color: #f8f9fa; font-weight: 600; color: #555; position: sticky; top: 0; }
+        .status-ok { color: var(--success); font-weight: bold; }
+        .status-err { color: var(--error); font-weight: bold; }
+        .btn-sm {
+            padding: 6px 12px;
+            font-size: 13px;
+            background-color: var(--primary);
+        }
+
+        .loading-overlay {
+            display: none;
+            text-align: center;
+            padding: 20px;
+            font-weight: bold;
+            color: var(--accent);
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>SFZ to Deluge XML Batch Converter</h1>
+    <p>Process multiple .sfz files simultaneously. Output files are automatically named: <code>[Pack Name] - [Category] - [Preset Name].xml</code>. "From Mars" is removed from the name.</p>
+
+    <div class="step">
+        <h3>1. Category (e.g. folder name on SD)</h3>
+        <label for="categoryInput">Subfolder name (e.g. Bass, Lead):</label>
+        <input type="text" id="categoryInput" value="Bass" placeholder="e.g. Bass">
+    </div>
+
+    <div class="step">
+        <h3>2. Select Files</h3>
+        <div class="drop-zone" id="dropZone">
+            <p>Drop <strong>.sfz</strong> files here (multiple selection possible)</p>
+            <input type="file" id="fileInput" accept=".dwp,.sfz" multiple>
+        </div>
+        
+        <!-- File List Preview -->
+        <ul id="fileListPreview"></ul>
+        <div id="fileCount" style="margin-top: 10px; color: #7f8c8d; font-size: 0.9em; text-align: right;"></div>
+    </div>
+
+    <div class="step">
+        <button onclick="processFiles()" id="processBtn" disabled>Convert Files</button>
+        <button onclick="downloadAllZip()" id="zipBtn" class="btn-zip" style="display:none; margin-left: 10px;">Download All as ZIP</button>
+    </div>
+
+    <div class="step">
+        <h3>Results List</h3>
+        <div id="loading" class="loading-overlay">Processing files...</div>
+        <div class="results-container">
+            <table id="resultsTable">
+                <thead>
+                    <tr>
+                        <th>Original File</th>
+                        <th>New Filename</th>
+                        <th>Info</th>
+                        <th>Status</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <!-- Results go here -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+    // --- Global Variables ---
+    let selectedFiles = [];
+    let processedResults = []; // Stores objects { filename, content } for ZIP
+
+    // --- Template Constants ---
+    const XML_HEADER = `<?xml version="1.0" encoding="UTF-8"?>
+<sound
+    firmwareVersion="4.1.3"
+    earliestCompatibleFirmware="4.1.0-alpha"
+    polyphonic="poly"
+    voicePriority="1"
+    mode="subtractive"
+    lpfMode="24dB"
+    modFXType="none">
+    <osc1
+        type="sample"
+        loopMode="0"
+        reversed="0"
+        timeStretchEnable="0"
+        timeStretchAmount="0">
+        <sampleRanges>
+`;
+
+    const XML_FOOTER = `        </sampleRanges>
+    </osc1>
+    <osc2
+        type="square"
+        transpose="0"
+        cents="0"
+        retrigPhase="-1" />
+    <lfo1 type="triangle" syncLevel="0" />
+    <lfo2 type="triangle" />
+    <unison num="1" detune="8" />
+    <delay
+        pingPong="1"
+        analog="0"
+        syncLevel="7" />
+    <compressor
+        syncLevel="6"
+        attack="327244"
+        release="936" />
+    <defaultParams
+        arpeggiatorGate="0x00000000"
+        portamento="0x80000000"
+        compressorShape="0xDC28F5B2"
+        oscAVolume="0x7FFFFFFF"
+        oscAPulseWidth="0x00000000"
+        oscAWavetablePosition="0x00000000"
+        oscBVolume="0x80000000"
+        oscBPulseWidth="0x00000000"
+        oscBWavetablePosition="0x00000000"
+        noiseVolume="0x80000000"
+        volume="0x4CCCCCA8"
+        pan="0x00000000"
+        lpfFrequency="0x7FFFFFFF"
+        lpfResonance="0x80000000"
+        hpfFrequency="0x80000000"
+        hpfResonance="0x80000000"
+        lfo1Rate="0x1999997E"
+        lfo2Rate="0x00000000"
+        modulator1Amount="0x80000000"
+        modulator1Feedback="0x80000000"
+        modulator2Amount="0x80000000"
+        modulator2Feedback="0x80000000"
+        carrier1Feedback="0x80000000"
+        carrier2Feedback="0x80000000"
+        modFXRate="0x00000000"
+        modFXDepth="0x00000000"
+        delayRate="0x00000000"
+        delayFeedback="0x80000000"
+        reverbAmount="0x80000000"
+        arpeggiatorRate="0x00000000"
+        stutterRate="0x00000000"
+        sampleRateReduction="0x80000000"
+        bitCrush="0x80000000"
+        modFXOffset="0x00000000"
+        modFXFeedback="0x00000000">
+        <envelope1
+            attack="0x80000000"
+            decay="0xE6666654"
+            sustain="0x7FFFFFFF"
+            release="0x80000000" />
+        <envelope2
+            attack="0xE6666654"
+            decay="0xE6666654"
+            sustain="0xFFFFFFE9"
+            release="0xE6666654" />
+        <patchCables>
+            <patchCable
+                source="velocity"
+                destination="volume"
+                amount="0x3FFFFFE8" />
+            <patchCable
+                source="aftertouch"
+                destination="volume"
+                amount="0x2A3D7094" />
+            <patchCable
+                source="y"
+                destination="lpfFrequency"
+                amount="0x19999990" />
+        </patchCables>
+        <equalizer
+            bass="0x00000000"
+            treble="0x00000000"
+            bassFrequency="0x00000000"
+            trebleFrequency="0x00000000" />
+    </defaultParams>
+    <arpeggiator
+        mode="off"
+        numOctaves="2"
+        syncLevel="7" />
+    <modKnobs>
+        <modKnob controlsParam="pan" />
+        <modKnob controlsParam="volumePostFX" />
+        <modKnob controlsParam="lpfResonance" />
+        <modKnob controlsParam="lpfFrequency" />
+        <modKnob controlsParam="env1Release" />
+        <modKnob controlsParam="env1Attack" />
+        <modKnob controlsParam="delayFeedback" />
+        <modKnob controlsParam="delayRate" />
+        <modKnob controlsParam="reverbAmount" />
+        <modKnob controlsParam="volumePostReverbSend" patchAmountFromSource="compressor" />
+        <modKnob controlsParam="pitch" patchAmountFromSource="lfo1" />
+        <modKnob controlsParam="lfo1Rate" />
+        <modKnob controlsParam="portamento" />
+        <modKnob controlsParam="stutterRate" />
+        <modKnob controlsParam="bitcrushAmount" />
+        <modKnob controlsParam="sampleRateReduction" />
+    </modKnobs>
+</sound>`;
+
+    const NOTE_NAMES = {
+        'C': 0, 'C#': 1, 'Db': 1, 'D': 2, 'D#': 3, 'Eb': 3,
+        'E': 4, 'F': 5, 'F#': 6, 'Gb': 6, 'G': 7, 'G#': 8, 'Ab': 8,
+        'A': 9, 'A#': 10, 'Bb': 10, 'B': 11
+    };
+
+    // --- UI Logic ---
+    const dropZone = document.getElementById('dropZone');
+    const fileInput = document.getElementById('fileInput');
+    const categoryInput = document.getElementById('categoryInput');
+    const processBtn = document.getElementById('processBtn');
+    const fileCountLabel = document.getElementById('fileCount');
+    const fileListPreview = document.getElementById('fileListPreview');
+
+    // Drag events
+    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+        dropZone.addEventListener(eventName, preventDefaults, false);
+    });
+
+    function preventDefaults(e) { e.preventDefault(); e.stopPropagation(); }
+    function highlight(e) { dropZone.classList.add('dragover'); }
+    function unhighlight(e) { dropZone.classList.remove('dragover'); }
+
+    ['dragenter', 'dragover'].forEach(evt => dropZone.addEventListener(evt, highlight, false));
+    ['dragleave', 'drop'].forEach(evt => dropZone.addEventListener(evt, unhighlight, false));
+
+    dropZone.addEventListener('drop', handleDrop, false);
+    fileInput.addEventListener('change', function() { handleFiles(this.files); });
+
+    function handleDrop(e) {
+        const dt = e.dataTransfer;
+        handleFiles(dt.files);
+    }
+
+    function handleFiles(files) {
+        if (files.length > 0) {
+            // Convert FileList to Array and filter valid extensions
+            selectedFiles = Array.from(files).filter(f => {
+                const ext = f.name.split('.').pop().toLowerCase();
+                return ext === 'dwp' || ext === 'sfz';
+            });
+            
+            // Clear and populate preview list
+            fileListPreview.innerHTML = '';
+            
+            if (selectedFiles.length === 0) {
+                alert("No valid files (.dwp, .sfz) found.");
+                processBtn.disabled = true;
+                fileCountLabel.innerText = "";
+                fileListPreview.style.display = 'none';
+            } else {
+                selectedFiles.forEach(file => {
+                    const li = document.createElement('li');
+                    li.textContent = file.name;
+                    fileListPreview.appendChild(li);
+                });
+                fileListPreview.style.display = 'block';
+                
+                fileCountLabel.innerText = `${selectedFiles.length} file(s) selected.`;
+                processBtn.disabled = false;
+            }
+        }
+    }
+
+    // --- Core Parsing & Processing ---
+
+    async function processFiles() {
+        processBtn.disabled = true;
+        document.getElementById('loading').style.display = 'block';
+        const tbody = document.querySelector('#resultsTable tbody');
+        tbody.innerHTML = '';
+        processedResults = []; // Reset for ZIP
+        const zipBtn = document.getElementById('zipBtn');
+        zipBtn.style.display = 'none';
+
+        const category = categoryInput.value.trim() || "Bass";
+
+        // Process files sequentially (or parallel)
+        for (let file of selectedFiles) {
+            await processSingleFile(file, category, tbody);
+        }
+
+        document.getElementById('loading').style.display = 'none';
+        processBtn.disabled = false;
+        
+        if (processedResults.length > 0) {
+            zipBtn.style.display = 'inline-block';
+        }
+    }
+
+    function processSingleFile(file, category, tbody) {
+        return new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.readAsText(file, "ISO-8859-1");
+            
+            reader.onload = function(e) {
+                const content = e.target.result;
+                const ext = file.name.split('.').pop().toLowerCase();
+                let samples = [];
+                let errorMsg = null;
+
+                // 1. Parse content
+                try {
+                    if (ext === 'sfz') {
+                        samples = parseSFZ(content);
+                    } else {
+                        samples = parseDWP(content);
+                    }
+                } catch (err) {
+                    errorMsg = "Parsing Error";
+                }
+
+                if (!errorMsg && samples.length === 0) {
+                    errorMsg = "No samples found";
+                }
+
+                // 2. Determine Output Filename and internal Path
+                // Logic: "Tom Sawyer Bass - OB From Mars.sfz"
+                
+                const filenameNoExt = file.name.replace(/\.(dwp|sfz)$/i, '');
+                const nameParts = filenameNoExt.split(' - ');
+                
+                let packName = "Unknown";
+                let presetName = filenameNoExt;
+
+                if (nameParts.length > 1) {
+                    packName = nameParts.pop().trim(); // Take last part as Pack
+                    presetName = nameParts.join(' - ').trim(); // Rest is Preset
+                } else {
+                    packName = "UnknownPack"; 
+                }
+
+                // --- CLEANUP: Remove "From Mars" ---
+                // Regex removes " From Mars" (case insensitive)
+                packName = packName.replace(/ From Mars/gi, "").trim();
+
+                // Construct new Output Filename
+                // E.g. "OB - Bass - Tom Sawyer Bass.xml"
+                const outputFilename = `${packName} - ${category} - ${presetName}.xml`;
+
+                // Construct Path inside Deluge
+                // Use original pack name for path to ensure files are found if folders aren't renamed
+                let originalPackName = "Unknown";
+                const tempParts = filenameNoExt.split(' - ');
+                if (tempParts.length > 1) originalPackName = tempParts.pop().trim();
+                
+                const delugePath = `SAMPLES/Multisamples/${originalPackName}/${category}/${presetName}/`;
+
+                // 3. Generate XML if no error
+                let xmlContent = "";
+                if (!errorMsg) {
+                    xmlContent = generateXMLString(samples, delugePath);
+                    // Add to global list for ZIP
+                    processedResults.push({
+                        name: outputFilename,
+                        content: xmlContent
+                    });
+                }
+
+                // 4. Render Row
+                const tr = document.createElement('tr');
+                
+                // Status Cell
+                let statusHtml = errorMsg ? `<span class="status-err">${errorMsg}</span>` : `<span class="status-ok">OK</span>`;
+                
+                // Action Cell
+                let actionHtml = '';
+                if (!errorMsg) {
+                    // Create a blob URL for individual download
+                    const blob = new Blob([xmlContent], {type: 'text/xml'});
+                    const url = URL.createObjectURL(blob);
+                    actionHtml = `<a href="${url}" download="${outputFilename}" class="btn-sm" style="text-decoration:none; color:white; border-radius:4px;">Download</a>`;
+                } else {
+                    actionHtml = '-';
+                }
+
+                tr.innerHTML = `
+                    <td>${file.name}</td>
+                    <td>${outputFilename}</td>
+                    <td>${samples.length} Samples</td>
+                    <td>${statusHtml}</td>
+                    <td>${actionHtml}</td>
+                `;
+                tbody.appendChild(tr);
+
+                resolve();
+            };
+            
+            reader.onerror = function() {
+                // Handle read error
+                const tr = document.createElement('tr');
+                tr.innerHTML = `<td>${file.name}</td><td colspan="4" class="status-err">Read Error</td>`;
+                tbody.appendChild(tr);
+                resolve();
+            };
+        });
+    }
+
+    // --- Parser Helpers (Same as before) ---
+
+    function parseDWP(content) {
+        const wavMatches = content.match(/[a-zA-Z0-9_\-\/\\: ]+\.wav/gi);
+        if (!wavMatches) return [];
+        let uniqueFiles = [...new Set(wavMatches)].map(path => path.split(/[/\\]/).pop());
+        
+        // FILTER: Nummerierte Duplikate entfernen (z.B. _0002.wav)
+        uniqueFiles = uniqueFiles.filter(f => !/_\d+\.wav$/i.test(f));
+
+        let samples = [];
+        uniqueFiles.forEach(filename => {
+            const midi = parseMidiFromFilename(filename);
+            if (midi !== null) {
+                samples.push({
+                    filename: filename,
+                    rangeTop: midi,
+                    rootNote: midi,
+                    endPos: null
+                });
+            }
+        });
+        samples.sort((a, b) => a.rangeTop - b.rangeTop);
+        return samples;
+    }
+
+    function parseSFZ(content) {
+        const lines = content.split(/\r?\n/);
+        const samples = [];
+        lines.forEach(line => {
+            line = line.trim();
+            if (line.startsWith('<region>') && line.includes('sample=')) {
+                const sampleMatch = line.match(/sample=(.+?\.wav)/i);
+                const hikeyMatch = line.match(/hikey=(\d+)/);
+                const pitchMatch = line.match(/pitch_keycenter=(\d+)/);
+                const endMatch = line.match(/end=(\d+)/);
+                if (sampleMatch) {
+                    const rawPath = sampleMatch[1].trim();
+                    const filename = rawPath.split(/[/\\]/).pop();
+
+                    // FILTER: Nummerierte Duplikate entfernen
+                    if (/_\d+\.wav$/i.test(filename)) return; // Skip iteration
+
+                    let rangeTop = hikeyMatch ? parseInt(hikeyMatch[1]) : parseMidiFromFilename(filename);
+                    let rootNote = pitchMatch ? parseInt(pitchMatch[1]) : parseMidiFromFilename(filename);
+                    if (rangeTop !== null && rootNote !== null) {
+                        samples.push({
+                            filename: filename,
+                            rangeTop: rangeTop,
+                            rootNote: rootNote,
+                            endPos: endMatch ? parseInt(endMatch[1]) : null
+                        });
+                    }
+                }
+            }
+        });
+        samples.sort((a, b) => a.rangeTop - b.rangeTop);
+        return samples;
+    }
+
+    function parseMidiFromFilename(filename) {
+        const noteRegex = /([A-G][#b]?)(-?[0-9])/g;
+        let match, bestMatch = null;
+        while ((match = noteRegex.exec(filename)) !== null) { bestMatch = match; }
+        if (bestMatch) {
+            const noteName = bestMatch[1];
+            const octave = parseInt(bestMatch[2]);
+            const semitone = NOTE_NAMES[noteName];
+            return (octave + 2) * 12 + semitone; 
+        }
+        return null;
+    }
+
+    function generateXMLString(samples, basePath) {
+        let xmlBody = "";
+        samples.forEach(sample => {
+            let fullPath = basePath + sample.filename;
+            let transpose = 60 - sample.rootNote; 
+            let zoneTag = `<zone startSamplePos="0"`;
+            if (sample.endPos !== null) zoneTag += ` endSamplePos="${sample.endPos}"`;
+            zoneTag += ` />`;
+
+            xmlBody += `            <sampleRange
+                rangeTopNote="${sample.rangeTop}"
+                fileName="${fullPath}"
+                transpose="${transpose}">
+                ${zoneTag}
+            </sampleRange>\n`;
+        });
+        return XML_HEADER + xmlBody + XML_FOOTER;
+    }
+
+    // --- ZIP Download ---
+
+    function downloadAllZip() {
+        if (processedResults.length === 0) return;
+
+        const zip = new JSZip();
+        processedResults.forEach(item => {
+            zip.file(item.name, item.content);
+        });
+
+        zip.generateAsync({type:"blob"})
+        .then(function(content) {
+            // Trigger download
+            const url = URL.createObjectURL(content);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = "Converted_Patches.zip";
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        });
+    }
+
+</script>
+
+</body>
+</html>
