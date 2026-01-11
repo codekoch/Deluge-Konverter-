@@ -192,7 +192,7 @@
         <h3>1. Folder Settings</h3>
         
         <label for="categoryInput">Subfolder name (e.g. Bass, Lead):</label>
-        <input type="text" id="categoryInput" value="Bass" placeholder="e.g. Bass">
+        <input type="text" id="categoryInput" value="Bass" placeholder="e.g. Bass (leave empty to skip)">
         
         <label for="packNameInput">Pack Name Override <small>(Optional)</small>:</label>
         <input type="text" id="packNameInput" placeholder="e.g. OB (leave empty to auto-detect from filename)">
@@ -446,7 +446,7 @@
         const zipBtn = document.getElementById('zipBtn');
         zipBtn.style.display = 'none';
 
-        const category = categoryInput.value.trim() || "Bass";
+        const category = categoryInput.value.trim();
         const packNameOverride = packNameInput.value.trim(); // Get override value
 
         // Process files sequentially (or parallel)
@@ -523,12 +523,22 @@
                 const cleanPackName = packName.replace(/ From Mars/gi, "").trim();
 
                 // Construct new Output Filename
-                // E.g. "OB - Bass - Tom Sawyer Bass.xml"
-                const outputFilename = `${cleanPackName} - ${category} - ${presetName}.xml`;
+                // E.g. "OB - Bass - Tom Sawyer Bass.xml" or "OB - Tom Sawyer Bass.xml" if category is empty
+                let outputFilenameParts = [cleanPackName];
+                if (category) {
+                    outputFilenameParts.push(category);
+                }
+                outputFilenameParts.push(presetName + ".xml");
+                const outputFilename = outputFilenameParts.join(' - ');
 
                 // Construct Path inside Deluge
-                // Use original packName (preserves "From Mars" if present in folder/file)
-                const delugePath = `SAMPLES/Multisamples/${packName}/${category}/${presetName}/`;
+                // Use packName (either overridden or auto-detected)
+                let pathParts = ["SAMPLES", "Multisamples", packName];
+                if (category) {
+                    pathParts.push(category);
+                }
+                pathParts.push(presetName, ""); // Empty string ensures trailing slash
+                const delugePath = pathParts.join('/');
 
                 // 3. Generate XML if no error
                 let xmlContent = "";
