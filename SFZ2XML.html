@@ -186,7 +186,7 @@
 
 <div class="container">
     <h1>SFZ/DWP to Deluge XML Batch Converter</h1>
-    <p>Process multiple .sfz or .dwp files simultaneously. Output files are automatically named: <code>[Pack Name] - [Category] - [Preset Name].xml</code>. "From Mars" is removed from the name automatically.</p>
+    <p>Process multiple .sfz or .dwp files simultaneously. Output files are automatically named: <code>[Pack Name] - [Category] - [Preset Name].xml</code>. "From Mars" is removed from the filename (but kept in path).</p>
 
     <div class="step">
         <h3>1. Folder Settings</h3>
@@ -196,7 +196,7 @@
         
         <label for="packNameInput">Pack Name Override <small>(Optional)</small>:</label>
         <input type="text" id="packNameInput" placeholder="e.g. OB (leave empty to auto-detect from filename)">
-        <small>If set, this will replace the auto-detected pack name in both the filename and the sample path.</small>
+        <small>If set, this will replace the auto-detected pack name in the sample path.</small>
     </div>
 
     <div class="step">
@@ -518,15 +518,16 @@
                     }
                 }
 
-                // --- CLEANUP: Remove "From Mars" (Global, applies to manual override too now) ---
-                packName = packName.replace(/ From Mars/gi, "").trim();
+                // --- CLEANUP: Remove "From Mars" ONLY for the output filename ---
+                // The directory path (delugePath) should keep the original name to match SD card folders.
+                const cleanPackName = packName.replace(/ From Mars/gi, "").trim();
 
                 // Construct new Output Filename
                 // E.g. "OB - Bass - Tom Sawyer Bass.xml"
-                const outputFilename = `${packName} - ${category} - ${presetName}.xml`;
+                const outputFilename = `${cleanPackName} - ${category} - ${presetName}.xml`;
 
                 // Construct Path inside Deluge
-                // Use packName (either overridden or auto-detected)
+                // Use original packName (preserves "From Mars" if present in folder/file)
                 const delugePath = `SAMPLES/Multisamples/${packName}/${category}/${presetName}/`;
 
                 // 3. Generate XML if no error
@@ -597,7 +598,7 @@
                     filename: filename,
                     rangeTop: midi,
                     rootNote: midi,
-                    endPos: null
+                    endPos: 50000
                 });
             }
         });
